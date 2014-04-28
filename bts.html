@@ -1,0 +1,204 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+          "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+
+<head>
+    <title>BTS</title>
+    <link href="css/bootstrap.min.css" rel="stylesheet" />    
+    <script src="js/jquery-2.1.0.min.js" type="text/javascript"></script>    
+    <script src="js/game.core.js" type="text/javascript"></script>
+    <script src="js/game.object.js" type="text/javascript"></script>
+    <script src="js/game.state.js" type="text/javascript"></script>
+    <script src="js/bts.scripts.js" type="text/javascript"></script>
+</head>
+
+<body style="background-color: #673147; ">    
+    <div class="container">        
+        <div style="color:lightgray;">
+            <h1>IsoMiner <small>#LD48</small></h1>
+            <p>W - Go/Mine NW, A - Go/Mine SW, S - Go/Mine SE, D - Go/Mine NE. There is a hole on each level. Once you fall you can't go up. The hero's name is Max.<br />
+            Game has no point. Not enough time to finish! Wanted to try to make a mining game with a 2.5d perspective.<br />
+            First time making an HTML5/JS game! :)
+            </p>
+        </div>
+        <div style="margin-top:50px;text-align:center;">
+            <div id="gameScreen" />
+            <br />
+        </div>
+    </div>
+
+    <script>
+
+        var FPS = 60;
+        var CANVAS_WIDTH = 1024;
+        var CANVAS_HEIGHT = 720;
+        var LEVELS = 31;
+        var LEVELDIM = 11;
+
+        function Game() {
+            var self = this;
+            self.ctx = null;
+            self.components = [];
+            self.lastUpdate = Date.now();
+            self.input = new Input();
+            self.lost = false;
+
+            self.init = function () {
+                var canvasElement = $("<canvas style='border-radius: 15px;' width='" + CANVAS_WIDTH + "' height='" + CANVAS_HEIGHT + "'></canvas>");
+
+                canvasElement.on("mousemove", function (e) {
+                    self.input.mouseState.pos.x = e.clientX - canvasElement.offset().left;
+                    self.input.mouseState.pos.y = e.clientY - canvasElement.offset().top;
+                });
+
+                canvasElement.on("mousedown", function (e) {
+                    self.input.mouseState.isDown = true;
+                });
+
+                canvasElement.on("mouseup", function (e) {
+                    self.input.mouseState.isDown = false;
+                });
+
+                $(document).on("keydown", function (e) {
+                    self.input.keyboardState.keys[e.keyCode].setState(true);
+                });
+
+                $(document).on("keyup", function (e) {
+                    self.input.keyboardState.keys[e.keyCode].setState(false);
+                });
+
+                self.ctx = canvasElement.get(0).getContext("2d");
+                $("#gameScreen").html(canvasElement);
+
+                var sceneMgr = new SceneManager();
+                sceneMgr.init(self.ctx);
+
+                var gameplayScene = new GameScene();
+                
+                var player = new GameObject(0);
+                var center = (Math.floor((LEVELDIM / 2)) - 1);
+                player.addComponent(new Transform(0, center * 40));
+                var axeSheet = new SpriteSheet("axe", "sprites/axeSheet.png", 3, 1);
+                player.addComponent((new SpriteRenderer())
+                    .addSprite(new SpriteSheet("minMax", "sprites/minMaxSheet.png", 2, 1))
+                    .addSprite(axeSheet));
+                player.addComponent((new SoundRenderer())
+                    .addSoundEffect(new SoundEffect("mine", "audio/mine.wav"))
+                    .addSoundEffect(new SoundEffect("mined", "audio/mineComplete.wav")));
+                var playerScript = new Player(player, self.input, new Vector2(center + 1, center + 1), axeSheet);
+                player.addComponent(new Script(playerScript));
+
+                var env = new GameObject(0);
+                env.addComponent(new Transform(0, 0));
+                var world = new World(LEVELS, LEVELDIM, playerScript);
+                env.addComponent(new Script(world));
+                gameplayScene.addGameObj(env);
+
+                var gameController = new GameObject(0);
+                var gc = new GameController(LEVELS, playerScript);
+                gc.onDie = function () {
+                    self.lose();
+                };
+                gameController.addComponent(new Script(gc));
+                gameplayScene.addGameObj(gameController);
+
+                //var dirtText = new Text("dirt", "0");
+                //var stoneText = new Text("stone", "0");
+                ////stoneText.setOffset(20, 0);
+                //var rubyText = new Text("ruby", "0");
+                ////rubyText.setOffset(40, 0);
+                //var saphText = new Text("saph", "0");
+                ////saphText.setOffset(60, 0);
+                //var emeraldText = new Text("emerald", "0");
+                ////emeraldText.setOffset(80, 0);
+                //var hub = new Hud(playerScript, dirtText, stoneText, rubyText, saphText, emeraldText);
+                //var hudGO = new GameObject(-Number.MAX_VALUE);
+                //hudGO.addComponent(new Transform(100, 100));
+                //hudGO.addComponent((new TextRenderer())
+                //    .addText(dirtText)
+                //    //.addText(stoneText)
+                //    //.addText(rubyText)
+                //    //.addText(saphText)
+                //    .addText(emeraldText));
+                //hudGO.addComponent(new Script(hub));
+                //gameplayScene.addGameObj(hudGO);
+
+                var camera = new Camera(-Number.MAX_VALUE + 1, CANVAS_WIDTH, CANVAS_HEIGHT);
+                camera.addComponent(new Transform(500, 400))
+                    .addComponent(new Script(new CameraFollow(camera, player)));
+
+                gameplayScene.addGameObj(camera);
+                world.getBlocks().forEach(function (block) {
+                    if (block != null)
+                        gameplayScene.addGameObj(block.getGameObject());
+                });
+                gameplayScene.addGameObj(player);
+
+
+                sceneMgr.pushScene(gameplayScene);
+                self.components.push(sceneMgr);
+            };
+
+            self.getTimeDelta = function () {
+                var now = Date.now();
+                var delta = (now - self.lastUpdate) / 1.0;
+                self.lastUpdate = now;
+                return delta;
+            };
+
+            self.update = function () {
+                if (self.lost)
+                    return;
+
+                self.components.forEach(function (component) {
+                    if (typeof component.update == 'function') {
+                        component.update(self.getTimeDelta());
+                    }
+                });
+            };
+
+            self.draw = function () {
+                self.ctx.save();
+                self.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                self.ctx.fillStyle = "black";
+                self.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+
+                self.components.forEach(function (component) {
+                    if (typeof component.draw == 'function') {
+                        component.draw(self.getTimeDelta(), self);
+                    }
+                });
+
+                self.ctx.restore();
+            };
+
+            self.lose = function() {
+                self.lost = true;
+            }
+        }
+
+        function main() {
+            var game = new Game();
+            game.init();
+            setInterval(function () {
+                if (!self.isPaused) {
+                    if (game.lost) {
+                        delete game;
+                        game = new Game();
+                        game.init();
+                    }
+
+                    game.update();
+                    game.draw();
+                }
+            }, 1000 / FPS);
+        }
+
+        main();
+
+    </script>
+
+</body>
+
+</html>
