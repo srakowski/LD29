@@ -1,4 +1,4 @@
-LD48
+LD29
 ====
 
-Source code for my LD48 entry. Not really a completed game >.&lt;...
+Source code for my LD29 entry. Not really a completed game >.&lt;...
